@@ -22,6 +22,148 @@ from providers import PROVIDERS
 
 st.set_page_config(page_title="Project Coach", page_icon="🧭", layout="wide")
 
+
+def inject_custom_css():
+    st.markdown(
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        html, body, [class*="css"] {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        [data-testid="stSidebar"] {
+            background-color: #FFFFFF;
+            border-right: 1px solid #E3E6EA;
+        }
+
+        h1, h2, h3 {
+            color: #1A2233 !important;
+            font-weight: 700 !important;
+        }
+
+        /* Custom header banner */
+        .pc-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding-bottom: 18px;
+            margin-bottom: 22px;
+            border-bottom: 1px solid #E3E6EA;
+        }
+        .pc-badge {
+            width: 44px;
+            height: 44px;
+            flex-shrink: 0;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #0B3B6F, #1E5FAE);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #FFFFFF;
+            font-weight: 700;
+            font-size: 18px;
+        }
+        .pc-header-text h1 {
+            margin: 0 !important;
+            font-size: 26px !important;
+        }
+        .pc-header-text p {
+            margin: 2px 0 0 0;
+            font-size: 14px;
+            color: #5B6472;
+        }
+
+        /* Text inputs / textareas / selects */
+        .stTextArea textarea, .stTextInput input {
+            border-radius: 8px !important;
+            border: 1px solid #D7DCE2 !important;
+        }
+        div[data-baseweb="select"] > div {
+            border-radius: 8px !important;
+            border: 1px solid #D7DCE2 !important;
+        }
+
+        /* File uploader */
+        [data-testid="stFileUploaderDropzone"] {
+            background: #FFFFFF;
+            border: 1.5px dashed #C7CED6;
+            border-radius: 10px;
+        }
+
+        /* Expander cards (phases) */
+        [data-testid="stExpander"] {
+            background: #FFFFFF;
+            border: 1px solid #E3E6EA;
+            border-radius: 10px;
+        }
+
+        /* Primary buttons - the one deliberate "shine" moment */
+        button[kind="primary"] {
+            position: relative;
+            overflow: hidden;
+            background: #1E5FAE !important;
+            border: none !important;
+            border-radius: 8px !important;
+            font-weight: 600 !important;
+            padding: 0.55rem 1.4rem !important;
+            box-shadow: 0 1px 2px rgba(11, 59, 111, 0.15);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        button[kind="primary"]:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(11, 59, 111, 0.28);
+        }
+        button[kind="primary"]::after {
+            content: "";
+            position: absolute;
+            top: 0; left: -75%;
+            width: 50%; height: 100%;
+            background: linear-gradient(120deg, transparent, rgba(255,255,255,0.45), transparent);
+            transform: skewX(-20deg);
+            transition: left 0.6s ease;
+        }
+        button[kind="primary"]:hover::after {
+            left: 130%;
+        }
+
+        /* Secondary/default buttons - quiet hover */
+        button[kind="secondary"] {
+            border-radius: 8px !important;
+            border: 1px solid #D7DCE2 !important;
+            background: #FFFFFF !important;
+            color: #1A2233 !important;
+            transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+        }
+        button[kind="secondary"]:hover {
+            border-color: #1E5FAE !important;
+            background: #F0F5FB !important;
+            color: #0B3B6F !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_header(title: str, subtitle: str = ""):
+    st.markdown(
+        f"""
+        <div class="pc-header">
+            <div class="pc-badge">PC</div>
+            <div class="pc-header-text">
+                <h1>{title}</h1>
+                <p>{subtitle}</p>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+inject_custom_css()
+
 PROVIDER_NAMES = list(PROVIDERS.keys())
 
 DEFAULTS = {
@@ -139,7 +281,7 @@ with st.sidebar:
 
 # ---------------------------------------------------------- Stage: Intake --
 def render_intake():
-    st.title("🧭 Project Coach")
+    render_header("Project Coach", "Turn any project into a plan you'll actually work through")
     st.write(
         "Describe the project or problem you're working on. Upload any supporting "
         "documents for context — notes, briefs, requirements, anything relevant. "
@@ -198,7 +340,7 @@ def render_intake():
 # ------------------------------------------------------- Stage: Plan review --
 def render_plan():
     plan = st.session_state.plan
-    st.title(plan.get("project_title", "Your Plan"))
+    render_header(plan.get("project_title", "Your Plan"), "Your step-by-step plan")
     st.write(plan.get("summary", ""))
 
     if st.session_state.doc_names:
@@ -212,11 +354,11 @@ def render_plan():
 
     col1, col2 = st.columns([1, 3])
     with col1:
-        if st.button("✏️ Rewrite intake", type="secondary"):
+        if st.button("Rewrite intake", type="secondary"):
             st.session_state.stage = "intake"
             st.rerun()
     with col2:
-        if st.button("Start Working Through It →", type="primary"):
+        if st.button("Start Working Through It", type="primary"):
             st.session_state.stage = "work"
             if plan["phases"] and plan["phases"][0]["steps"]:
                 st.session_state.selected_step = (0, 0)
@@ -240,7 +382,7 @@ def render_work():
                     st.session_state.selected_step = (p_idx, s_idx)
                     st.rerun()
         st.divider()
-        if st.button("← Back to plan overview"):
+        if st.button("Back to plan overview"):
             st.session_state.stage = "plan"
             st.rerun()
 

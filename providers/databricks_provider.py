@@ -17,11 +17,13 @@ If someone uploads an image, its filename is still mentioned in the text
 context, but the model won't actually see the image through this provider.
 
 To offer a model here:
-1. In the workspace, confirm a serving endpoint exists and is READY for it -
-   check Machine Learning > Serving, or ask a Databricks admin. Databricks'
-   own pay-per-token Foundation Model APIs endpoints are commonly named
-   like "databricks-claude-sonnet-4-5" or "databricks-gemini-2-5-pro", but
-   exact availability depends on your workspace/region.
+1. Check Unity Gateway > Models in the workspace (or ask a Databricks
+   admin) for what's available and READY. Databricks-hosted model services
+   there are queried as "system.ai.<name>" - for example
+   "system.ai.claude-sonnet-5" or "system.ai.gemini-3-8-flash". (Classic,
+   pre-Unity-Gateway serving endpoints are instead queried by their plain
+   endpoint name, e.g. "databricks-claude-sonnet-4-5" - check which kind
+   your workspace has.)
 2. On the app: App resources > + Add resource > Serving endpoint > pick it,
    permission "Can query", and give it a resource key matching one of the
    entries in MODEL_ENV_VARS below (e.g. "claude-serving-endpoint").

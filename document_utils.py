@@ -19,6 +19,7 @@ from typing import Any, Dict, List
 
 MAX_CHARS_PER_DOC = 8000  # keeps prompts a reasonable size even with several docs
 MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB per image, generous for a screenshot/diagram
+MAX_ROWS_PER_SHEET = 300  # caps xlsx extraction time on large workbooks
 
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
 
@@ -69,16 +70,29 @@ def extract_text_from_file(uploaded_file) -> str:
         if name.endswith(".xlsx") or name.endswith(".xlsm"):
             import openpyxl
 
-            workbook = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
+            workbook = openpyxl.load_workbook(
+                io.BytesIO(data), data_only=True, read_only=True
+            )
             sheets_text = []
             for sheet in workbook.worksheets:
                 rows = []
+                row_count = 0
+                truncated = False
                 for row in sheet.iter_rows(values_only=True):
-                    if any(cell is not None for cell in row):
-                        rows.append(
-                            "\t".join("" if cell is None else str(cell) for cell in row)
-                        )
-                sheets_text.append(f"[Sheet: {sheet.title}]\n" + "\n".join(rows))
+                    if not any(cell is not None for cell in row):
+                        continue
+                    if row_count >= MAX_ROWS_PER_SHEET:
+                        truncated = True
+                        break
+                    rows.append(
+                        "\t".join("" if cell is None else str(cell) for cell in row)
+                    )
+                    row_count += 1
+                sheet_text = f"[Sheet: {sheet.title}]\n" + "\n".join(rows)
+                if truncated:
+                    sheet_text += f"\n...[only first {MAX_ROWS_PER_SHEET} non-empty rows read]..."
+                sheets_text.append(sheet_text)
+            workbook.close()
             return "\n\n".join(sheets_text)
 
         if name.endswith(".xls"):

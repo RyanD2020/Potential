@@ -233,7 +233,13 @@ with st.sidebar:
     key_env_var = getattr(provider_module, "KEY_ENV_VAR", None)
     if key_env_var is None:
         st.session_state.api_keys[st.session_state.provider] = ""
-        st.success(f"✓ {st.session_state.provider} is ready — {provider_module.KEY_HELP}")
+        if getattr(provider_module, "HAS_CONFIGURED_MODELS", True):
+            st.success(f"✓ {st.session_state.provider} is ready — {provider_module.KEY_HELP}")
+        else:
+            st.warning(
+                f"{st.session_state.provider} has no model wired up yet. "
+                "See the Model dropdown, or providers/databricks_provider.py for setup steps."
+            )
     else:
         env_key = os.environ.get(key_env_var, "")
         if env_key:
@@ -337,7 +343,7 @@ def render_intake():
             st.error(f"Add your {st.session_state.provider} API key in the sidebar first.")
             return
 
-        with st.spinner("Reading your documents and building your plan..."):
+        with st.spinner("Reading your documents..."):
             all_files = uploaded_files or []
             doc_files = [f for f in all_files if not is_image_file(f.name)]
             image_files = [f for f in all_files if is_image_file(f.name)]
@@ -348,13 +354,14 @@ def render_intake():
             st.session_state.docs_images = docs_images
             st.session_state.doc_names = [f.name for f in all_files]
 
-            if docs_images and not getattr(current_provider_module(), "SUPPORTS_VISION", True):
-                st.warning(
-                    f"{st.session_state.provider} can't actually see uploaded images through "
-                    "this path yet - it'll know their filenames but not their content. "
-                    "Switch to Google (Gemini) if the model needs to see what's in them."
-                )
+        if docs_images and not getattr(current_provider_module(), "SUPPORTS_VISION", True):
+            st.warning(
+                f"{st.session_state.provider} can't actually see uploaded images through "
+                "this path yet - it'll know their filenames but not their content. "
+                "Switch to Google (Gemini) if the model needs to see what's in them."
+            )
 
+        with st.spinner(f"Asking {st.session_state.provider} to build your plan..."):
             try:
                 plan = current_provider_module().generate_plan(
                     api_key=current_api_key(),

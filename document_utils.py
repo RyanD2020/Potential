@@ -17,9 +17,9 @@ import base64
 import io
 from typing import Any, Dict, List
 
-MAX_CHARS_PER_DOC = 8000  # keeps prompts a reasonable size even with several docs
+MAX_CHARS_PER_DOC = 5000  # keeps prompts a reasonable size even with several docs
 MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB per image, generous for a screenshot/diagram
-MAX_ROWS_PER_SHEET = 300  # caps xlsx extraction time on large workbooks
+MAX_ROWS_PER_SHEET = 150  # caps xlsx extraction time on large workbooks
 
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
 

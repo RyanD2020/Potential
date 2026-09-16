@@ -22,6 +22,7 @@ DISPLAY_NAME = "OpenAI (GPT)"
 MODELS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
 KEY_ENV_VAR = "OPENAI_API_KEY"
 KEY_HELP = "Get a key at platform.openai.com"
+SUPPORTS_VISION = True
 
 
 def _image_blocks(docs_images: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:

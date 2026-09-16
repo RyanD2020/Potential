@@ -367,6 +367,15 @@ def render_intake():
                 st.error(f"Couldn't generate a plan: {exc}")
                 return
 
+            if not isinstance(plan, dict) or not plan.get("phases"):
+                st.error(
+                    "The model returned an empty or incomplete plan (no phases). This can "
+                    "happen if it used up its response budget on internal reasoning before "
+                    "writing the actual plan, especially with a lot of document context. Try "
+                    "again, try a shorter intake description, or switch models/providers."
+                )
+                return
+
             st.session_state.plan = plan
             st.session_state.progress = {}
             st.session_state.chat_histories = {}

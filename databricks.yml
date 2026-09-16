@@ -12,41 +12,27 @@ resources:
     project_coach:
       name: "project-coach"
       source_code_path: .
-      # Only keep the entries you actually have set up - a resource here
-      # with no matching secret/endpoint will fail deployment.
+      # Only keep the entries you actually have wired up - a resource here
+      # with no matching endpoint will fail deployment.
       resources:
-        # No-key path: Databricks-hosted model services, confirmed available
-        # in this workspace under Unity Gateway > Models. Queried as
-        # "system.ai.<name>" per Databricks' docs - swap the GPT one for
-        # gpt-6-astra/gpt-5-6-terra/gpt-5-6-luna if you'd rather use those.
+        # No-key path: Databricks-hosted model services. The app's own
+        # resource picker confirmed these use the "databricks-<name>"
+        # format directly (not the "system.ai.<name>" format some Unity
+        # Gateway docs reference) - swap the GPT one for
+        # databricks-gpt-6-astra/databricks-gpt-5-6-terra/-luna if you'd
+        # rather use those.
         - name: claude-serving-endpoint
           serving_endpoint:
-            name: system.ai.claude-sonnet-5
+            name: databricks-claude-sonnet-5
             permission: CAN_QUERY
         - name: gemini-serving-endpoint
           serving_endpoint:
-            name: system.ai.gemini-3-8-flash
+            name: databricks-gemini-3-8-flash
             permission: CAN_QUERY
         - name: gpt-serving-endpoint
           serving_endpoint:
-            name: system.ai.gpt-5-6-sol
+            name: databricks-gpt-5-6-sol
             permission: CAN_QUERY
-        # Personal-key path: only needed if someone's using their own key.
-        - name: anthropic-api-key
-          secret:
-            scope: project-coach-secrets # create with: databricks secrets create-scope project-coach-secrets
-            key: ANTHROPIC_API_KEY
-            permission: READ
-        - name: openai-api-key
-          secret:
-            scope: project-coach-secrets
-            key: OPENAI_API_KEY
-            permission: READ
-        - name: google-api-key
-          secret:
-            scope: project-coach-secrets
-            key: GOOGLE_API_KEY
-            permission: READ
 
 targets:
   dev:

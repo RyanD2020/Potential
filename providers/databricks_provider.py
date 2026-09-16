@@ -34,7 +34,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional
 
-from databricks.sdk import WorkspaceClient
+from databricks.sdk import WorkspaceClient, client
 from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
 
 from .prompts import (
@@ -75,7 +75,12 @@ HAS_CONFIGURED_MODELS = bool(_configured_model_labels())
 def _client() -> WorkspaceClient:
     # Picks up the workspace host and this app's own auth automatically
     # when running as a Databricks App - nothing to configure here.
-    return WorkspaceClient()
+    #
+    # The databricks-sdk defaults to a 5-minute client-side HTTP timeout,
+    # which is too short for a plan-generation call with a lot of document
+    # context (see https://github.com/databricks/databricks-sdk-py/issues/860).
+    # Raise it explicitly.
+    return WorkspaceClient(config=client.Config(http_timeout_seconds=15 * 60))
 
 
 def _endpoint_for(model: str) -> str:

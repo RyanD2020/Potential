@@ -1,15 +1,24 @@
-"""Registry of available AI providers.
+"""Registry of AI providers shown in the app.
 
-Add a new vendor by writing a module with the same generate_plan/coach_step
-interface and adding it to PROVIDERS below - nothing else in the app needs
-to change.
+Only genuinely free-to-run options are registered here:
+  - Databricks (no key needed): free in the sense that it uses whatever
+    the workspace already has provisioned - no new vendor account or bill.
+  - Google (Gemini): its free tier needs no billing account at all.
+
+Anthropic and OpenAI have no free tier as of this writing (both require a
+paid account), so their modules stay in this folder - fully working,
+same interface - but are NOT registered below. If real, funded keys ever
+become available for either, re-enable them by importing the module and
+adding it to PROVIDERS; nothing else in the app needs to change.
 """
 from __future__ import annotations
 
-from . import anthropic_provider, google_provider, openai_provider
+from . import databricks_provider, google_provider
 
 PROVIDERS = {
-    anthropic_provider.DISPLAY_NAME: anthropic_provider,
+    databricks_provider.DISPLAY_NAME: databricks_provider,
     google_provider.DISPLAY_NAME: google_provider,
-    openai_provider.DISPLAY_NAME: openai_provider,
 }
+
+# Kept available but not user-facing until there's a funded key for them:
+# from . import anthropic_provider, openai_provider

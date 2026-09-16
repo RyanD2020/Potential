@@ -5,3 +5,17 @@ backgroundColor = "#F7F8FA"
 secondaryBackgroundColor = "#FFFFFF"
 textColor = "#1A2233"
 font = "sans serif"
+
+[server]
+# Databricks Apps runs Streamlit behind its own reverse proxy. Streamlit's
+# default CORS/XSRF checks compare the request's origin against what the
+# server thinks its own address is, which doesn't match through that proxy
+# layer - the file uploader fails silently (or with a 403/AxiosError) as a
+# result. Disabling both here is the standard fix for this exact class of
+# deployment. This is a real (if minor) security tradeoff: it removes
+# Streamlit's own CSRF protection on top of whatever Databricks' own
+# workspace authentication already provides. Since Databricks Apps sits
+# behind Databricks' own auth layer regardless, this is a common and
+# accepted pattern for apps deployed this way - but worth knowing about.
+enableCORS = false
+enableXsrfProtection = false

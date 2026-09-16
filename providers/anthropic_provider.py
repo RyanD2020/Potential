@@ -6,13 +6,14 @@ person picked without caring which vendor it is.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import anthropic
 
 from .prompts import (
     PLAN_SYSTEM_PROMPT,
     STEP_COACH_SYSTEM_TEMPLATE,
+    build_image_manifest_note,
     build_plan_user_message,
     extract_json,
 )
@@ -23,14 +24,43 @@ KEY_ENV_VAR = "ANTHROPIC_API_KEY"
 KEY_HELP = "Get a key at console.anthropic.com"
 
 
-def generate_plan(api_key: str, model: str, intake_text: str, docs_context: str) -> Dict[str, Any]:
+def _image_blocks(docs_images: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    blocks = []
+    for img in docs_images or []:
+        if not img.get("data"):
+            continue
+        blocks.append(
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": img["mime_type"],
+                    "data": img["data"],
+                },
+            }
+        )
+    return blocks
+
+
+def generate_plan(
+    api_key: str,
+    model: str,
+    intake_text: str,
+    docs_context: str,
+    docs_images: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     client = anthropic.Anthropic(api_key=api_key)
+
+    text = build_plan_user_message(intake_text, docs_context) + build_image_manifest_note(
+        docs_images or []
+    )
+    content = [{"type": "text", "text": text}] + _image_blocks(docs_images)
 
     response = client.messages.create(
         model=model,
         max_tokens=4000,
         system=PLAN_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": build_plan_user_message(intake_text, docs_context)}],
+        messages=[{"role": "user", "content": content}],
     )
 
     raw_text = "".join(block.text for block in response.content if block.type == "text")
@@ -49,6 +79,7 @@ def coach_step(
     why_it_matters: str,
     docs_context: str,
     chat_history: List[Dict[str, str]],
+    docs_images: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     client = anthropic.Anthropic(api_key=api_key)
 
@@ -63,11 +94,24 @@ def coach_step(
         docs_context=docs_context or "(none provided)",
     )
 
+    # Attach images to the first user turn only, so they aren't re-sent on
+    # every message in the conversation.
+    messages = list(chat_history)
+    image_blocks = _image_blocks(docs_images)
+    if image_blocks and messages and messages[0]["role"] == "user":
+        first = messages[0]
+        messages = [
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": first["content"]}] + image_blocks,
+            }
+        ] + messages[1:]
+
     response = client.messages.create(
         model=model,
         max_tokens=1500,
         system=system_prompt,
-        messages=chat_history,
+        messages=messages,
     )
 
     return "".join(block.text for block in response.content if block.type == "text")

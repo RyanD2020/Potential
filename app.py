@@ -233,9 +233,7 @@ with st.sidebar:
     key_env_var = getattr(provider_module, "KEY_ENV_VAR", None)
     if key_env_var is None:
         st.session_state.api_keys[st.session_state.provider] = ""
-        if getattr(provider_module, "HAS_CONFIGURED_MODELS", True):
-            st.success(f"✓ {st.session_state.provider} is ready — {provider_module.KEY_HELP}")
-        else:
+        if not getattr(provider_module, "HAS_CONFIGURED_MODELS", True):
             st.warning(
                 f"{st.session_state.provider} has no model wired up yet. "
                 "See the Model dropdown, or providers/databricks_provider.py for setup steps."

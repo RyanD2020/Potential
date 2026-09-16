@@ -1,14 +1,19 @@
-"""OpenAI (GPT) implementation of the provider interface, via the Responses API.
+"""Google (Gemini) implementation of the provider interface.
 
 Every provider module exposes the same two functions - generate_plan and
 coach_step - with the same signature, so app.py can call whichever one the
 person picked without caring which vendor it is.
+
+Gemini uses "model" instead of "assistant" as the role name for prior
+responses, so chat history gets translated before each call.
 """
 from __future__ import annotations
 
+import base64
 from typing import Any, Dict, List, Optional
 
-from openai import OpenAI
+from google import genai
+from google.genai import types
 
 from .prompts import (
     PLAN_SYSTEM_PROMPT,
@@ -18,24 +23,36 @@ from .prompts import (
     extract_json,
 )
 
-DISPLAY_NAME = "OpenAI (GPT)"
-MODELS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
-KEY_ENV_VAR = "OPENAI_API_KEY"
-KEY_HELP = "Get a key at platform.openai.com"
+DISPLAY_NAME = "Google (Gemini)"
+# Only free-tier models are listed - Gemini's Pro models require billing to
+# be enabled, so they're deliberately left out here. Google no longer
+# publishes exact free-tier rate limits; if these models change tier, check
+# aistudio.google.com or ai.google.dev/gemini-api/docs/rate-limits.
+MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
+KEY_ENV_VAR = "GOOGLE_API_KEY"
+KEY_HELP = "Get a key at aistudio.google.com"
+SUPPORTS_VISION = True
 
 
-def _image_blocks(docs_images: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
-    blocks = []
+def _image_parts(docs_images: Optional[List[Dict[str, Any]]]) -> List[Any]:
+    parts = []
     for img in docs_images or []:
         if not img.get("data"):
             continue
-        blocks.append(
-            {
-                "type": "input_image",
-                "image_url": f"data:{img['mime_type']};base64,{img['data']}",
-            }
+        parts.append(
+            types.Part.from_bytes(
+                data=base64.b64decode(img["data"]), mime_type=img["mime_type"]
+            )
         )
-    return blocks
+    return parts
+
+
+def _to_gemini_contents(chat_history: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    contents = []
+    for msg in chat_history:
+        role = "model" if msg["role"] == "assistant" else "user"
+        contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+    return contents
 
 
 def generate_plan(
@@ -45,21 +62,23 @@ def generate_plan(
     docs_context: str,
     docs_images: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    client = OpenAI(api_key=api_key)
+    client = genai.Client(api_key=api_key)
 
     text = build_plan_user_message(intake_text, docs_context) + build_image_manifest_note(
         docs_images or []
     )
-    content = [{"type": "input_text", "text": text}] + _image_blocks(docs_images)
+    contents = [text] + _image_parts(docs_images)
 
-    response = client.responses.create(
+    response = client.models.generate_content(
         model=model,
-        instructions=PLAN_SYSTEM_PROMPT,
-        input=[{"role": "user", "content": content}],
-        max_output_tokens=4000,
+        contents=contents,
+        config=types.GenerateContentConfig(
+            system_instruction=PLAN_SYSTEM_PROMPT,
+            max_output_tokens=4000,
+        ),
     )
 
-    return extract_json(response.output_text)
+    return extract_json(response.text)
 
 
 def coach_step(
@@ -76,7 +95,7 @@ def coach_step(
     chat_history: List[Dict[str, str]],
     docs_images: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
-    client = OpenAI(api_key=api_key)
+    client = genai.Client(api_key=api_key)
 
     system_prompt = STEP_COACH_SYSTEM_TEMPLATE.format(
         project_title=project_title,
@@ -89,24 +108,21 @@ def coach_step(
         docs_context=docs_context or "(none provided)",
     )
 
-    # Attach images to the first user turn only, so they aren't re-sent on
-    # every message in the conversation.
-    messages = list(chat_history)
-    image_blocks = _image_blocks(docs_images)
-    if image_blocks and messages and messages[0]["role"] == "user":
-        first = messages[0]
-        messages = [
-            {
-                "role": "user",
-                "content": [{"type": "input_text", "text": first["content"]}] + image_blocks,
-            }
-        ] + messages[1:]
+    contents = _to_gemini_contents(chat_history)
+    image_parts = _image_parts(docs_images)
+    if image_parts and contents and contents[0]["role"] == "user":
+        contents[0]["parts"] = contents[0]["parts"] + [
+            {"inline_data": {"mime_type": p.inline_data.mime_type, "data": p.inline_data.data}}
+            for p in image_parts
+        ]
 
-    response = client.responses.create(
+    response = client.models.generate_content(
         model=model,
-        instructions=system_prompt,
-        input=messages,
-        max_output_tokens=1500,
+        contents=contents,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            max_output_tokens=1500,
+        ),
     )
 
-    return response.output_text
+    return response.text

@@ -348,6 +348,13 @@ def render_intake():
             st.session_state.docs_images = docs_images
             st.session_state.doc_names = [f.name for f in all_files]
 
+            if docs_images and not getattr(current_provider_module(), "SUPPORTS_VISION", True):
+                st.warning(
+                    f"{st.session_state.provider} can't actually see uploaded images through "
+                    "this path yet - it'll know their filenames but not their content. "
+                    "Switch to Google (Gemini) if the model needs to see what's in them."
+                )
+
             try:
                 plan = current_provider_module().generate_plan(
                     api_key=current_api_key(),

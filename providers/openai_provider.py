@@ -57,7 +57,7 @@ def generate_plan(
         model=model,
         instructions=PLAN_SYSTEM_PROMPT,
         input=[{"role": "user", "content": content}],
-        max_output_tokens=4000,
+        max_output_tokens=64000,
     )
 
     return extract_json(response.output_text)
@@ -107,7 +107,7 @@ def coach_step(
         model=model,
         instructions=system_prompt,
         input=messages,
-        max_output_tokens=1500,
+        max_output_tokens=16000,
     )
 
     return response.output_text

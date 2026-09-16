@@ -74,7 +74,7 @@ def generate_plan(
         contents=contents,
         config=types.GenerateContentConfig(
             system_instruction=PLAN_SYSTEM_PROMPT,
-            max_output_tokens=4000,
+            max_output_tokens=8000,
         ),
     )
 
@@ -121,7 +121,7 @@ def coach_step(
         contents=contents,
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
-            max_output_tokens=1500,
+            max_output_tokens=3000,
         ),
     )
 

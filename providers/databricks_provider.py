@@ -8,12 +8,13 @@ secret), and this module queries whichever endpoint name comes through as
 an env var. Nothing to pay for beyond what the workspace already has
 provisioned.
 
-Uses the OpenAI-compatible client Databricks exposes for serving endpoints
-(`w.serving_endpoints.get_open_ai_client()`) rather than the plain
-ChatMessage-based query() call, since the OpenAI-compatible interface
-supports multi-part content (text + images) the same way the OpenAI
-provider does - useful since the served model (Claude/Gemini/GPT) is
-typically vision-capable.
+Uses the plain databricks-sdk `serving_endpoints.query()` call rather than
+the OpenAI-compatible client (`get_open_ai_client()`), since that method
+requires a newer databricks-sdk version than may be installed and isn't
+worth the version fragility. The tradeoff: this path sends text only - it
+does NOT support real vision/image input the way the Gemini provider does.
+If someone uploads an image, its filename is still mentioned in the text
+context, but the model won't actually see the image through this provider.
 
 To offer a model here:
 1. In the workspace, confirm a serving endpoint exists and is READY for it -
@@ -32,6 +33,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
 
 from .prompts import (
     PLAN_SYSTEM_PROMPT,
@@ -44,6 +46,7 @@ from .prompts import (
 DISPLAY_NAME = "Databricks (no key needed)"
 KEY_ENV_VAR = None  # No API key concept for this provider.
 KEY_HELP = "Runs on this app's own Databricks identity - nothing to enter."
+SUPPORTS_VISION = False  # Uses serving_endpoints.query(), which is text-only.
 
 # Friendly label -> env var holding that model's serving endpoint name.
 # Add a row here for each serving endpoint an admin wires up as an app
@@ -63,11 +66,10 @@ def _available_models() -> List[str]:
 MODELS = _available_models()
 
 
-def _openai_client():
+def _client() -> WorkspaceClient:
     # Picks up the workspace host and this app's own auth automatically
     # when running as a Databricks App - nothing to configure here.
-    w = WorkspaceClient()
-    return w.serving_endpoints.get_open_ai_client()
+    return WorkspaceClient()
 
 
 def _endpoint_for(model: str) -> str:
@@ -81,20 +83,6 @@ def _endpoint_for(model: str) -> str:
     return endpoint_name
 
 
-def _image_blocks(docs_images: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
-    blocks = []
-    for img in docs_images or []:
-        if not img.get("data"):
-            continue
-        blocks.append(
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:{img['mime_type']};base64,{img['data']}"},
-            }
-        )
-    return blocks
-
-
 def generate_plan(
     api_key: str,
     model: str,
@@ -104,19 +92,18 @@ def generate_plan(
 ) -> Dict[str, Any]:
     # api_key is unused here - kept so every provider module has an identical
     # call signature and app.py doesn't need to special-case this one.
-    client = _openai_client()
+    w = _client()
     endpoint = _endpoint_for(model)
 
     text = build_plan_user_message(intake_text, docs_context) + build_image_manifest_note(
         docs_images or []
     )
-    content = [{"type": "text", "text": text}] + _image_blocks(docs_images)
 
-    response = client.chat.completions.create(
-        model=endpoint,
+    response = w.serving_endpoints.query(
+        name=endpoint,
         messages=[
-            {"role": "system", "content": PLAN_SYSTEM_PROMPT},
-            {"role": "user", "content": content},
+            ChatMessage(role=ChatMessageRole.SYSTEM, content=PLAN_SYSTEM_PROMPT),
+            ChatMessage(role=ChatMessageRole.USER, content=text),
         ],
         max_tokens=4000,
     )
@@ -138,7 +125,7 @@ def coach_step(
     chat_history: List[Dict[str, str]],
     docs_images: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
-    client = _openai_client()
+    w = _client()
     endpoint = _endpoint_for(model)
 
     system_prompt = STEP_COACH_SYSTEM_TEMPLATE.format(
@@ -152,23 +139,16 @@ def coach_step(
         docs_context=docs_context or "(none provided)",
     )
 
-    # Attach images to the first user turn only, so they aren't re-sent on
-    # every message in the conversation.
-    messages = list(chat_history)
-    image_blocks = _image_blocks(docs_images)
-    if image_blocks and messages and messages[0]["role"] == "user":
-        first = messages[0]
-        messages = [
-            {
-                "role": "user",
-                "content": [{"type": "text", "text": first["content"]}] + image_blocks,
-            }
-        ] + messages[1:]
+    image_note = build_image_manifest_note(docs_images or [])
 
-    response = client.chat.completions.create(
-        model=endpoint,
-        messages=[{"role": "system", "content": system_prompt}] + messages,
-        max_tokens=1500,
-    )
+    messages = [ChatMessage(role=ChatMessageRole.SYSTEM, content=system_prompt)]
+    for i, msg in enumerate(chat_history):
+        role = ChatMessageRole.ASSISTANT if msg["role"] == "assistant" else ChatMessageRole.USER
+        content = msg["content"]
+        # Mention attached image filenames alongside the first user turn only.
+        if i == 0 and role == ChatMessageRole.USER:
+            content += image_note
+        messages.append(ChatMessage(role=role, content=content))
 
+    response = w.serving_endpoints.query(name=endpoint, messages=messages, max_tokens=1500)
     return response.choices[0].message.content

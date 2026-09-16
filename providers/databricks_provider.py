@@ -133,7 +133,7 @@ def generate_plan(
             ChatMessage(role=ChatMessageRole.SYSTEM, content=PLAN_SYSTEM_PROMPT),
             ChatMessage(role=ChatMessageRole.USER, content=text),
         ],
-        max_tokens=8000,
+        max_tokens=64000,
     )
 
     return extract_json(_response_text(response.choices[0].message.content))
@@ -178,5 +178,5 @@ def coach_step(
             content += image_note
         messages.append(ChatMessage(role=role, content=content))
 
-    response = w.serving_endpoints.query(name=endpoint, messages=messages, max_tokens=3000)
+    response = w.serving_endpoints.query(name=endpoint, messages=messages, max_tokens=16000)
     return _response_text(response.choices[0].message.content)

@@ -75,7 +75,15 @@ def extract_json(text: str) -> Dict[str, Any]:
     cleaned = text.strip()
     cleaned = re.sub(r"^```(json)?", "", cleaned).strip()
     cleaned = re.sub(r"```$", "", cleaned).strip()
-    return json.loads(cleaned)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "The model's response was cut off before it finished writing valid JSON "
+            f"({exc}). This usually means it ran out of its response budget - try again, "
+            "use a shorter intake description or fewer/smaller documents, or increase "
+            "max_tokens for this provider in providers/*.py."
+        ) from exc
 
 
 def build_plan_user_message(intake_text: str, docs_context: str) -> str:

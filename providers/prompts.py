@@ -83,3 +83,13 @@ def build_plan_user_message(intake_text: str, docs_context: str) -> str:
     if docs_context:
         message += f"\n\nSupporting documents:\n{docs_context}"
     return message
+
+
+def build_image_manifest_note(images: list) -> str:
+    """A short text note listing attached image filenames, so the model's
+    text context mentions them by name even though the actual image
+    content is sent as separate vision input alongside this text."""
+    names = [img["name"] for img in images if img.get("data")]
+    if not names:
+        return ""
+    return "\n\nAlso attached as images: " + ", ".join(names)

@@ -17,7 +17,7 @@ import os
 
 import streamlit as st
 
-from document_utils import build_supporting_docs_context
+from document_utils import build_supporting_docs_context, extract_images, is_image_file
 from providers import PROVIDERS
 
 st.set_page_config(page_title="Project Coach", page_icon="🧭", layout="wide")
@@ -170,6 +170,7 @@ DEFAULTS = {
     "stage": "intake",
     "intake_text": "",
     "docs_context": "",
+    "docs_images": [],
     "doc_names": [],
     "plan": None,
     "progress": {},
@@ -259,6 +260,7 @@ with st.sidebar:
             {
                 "intake_text": st.session_state.intake_text,
                 "docs_context": st.session_state.docs_context,
+                "docs_images": st.session_state.docs_images,
                 "doc_names": st.session_state.doc_names,
                 "plan": st.session_state.plan,
                 "progress": st.session_state.progress,
@@ -282,6 +284,7 @@ with st.sidebar:
             data = json.loads(uploaded_session.getvalue())
             st.session_state.intake_text = data.get("intake_text", "")
             st.session_state.docs_context = data.get("docs_context", "")
+            st.session_state.docs_images = data.get("docs_images", [])
             st.session_state.doc_names = data.get("doc_names", [])
             st.session_state.plan = data.get("plan")
             st.session_state.progress = data.get("progress", {})
@@ -320,8 +323,9 @@ def render_intake():
 
     uploaded_files = st.file_uploader(
         "Supporting documents (optional)",
-        type=["pdf", "docx", "txt", "md"],
+        type=["pdf", "docx", "txt", "md", "xlsx", "xlsm", "csv", "pptx", "png", "jpg", "jpeg", "gif", "webp"],
         accept_multiple_files=True,
+        help="Documents get their text read. Images (like diagrams or screenshots) are shown directly to the model.",
     )
 
     if st.button(
@@ -334,9 +338,15 @@ def render_intake():
             return
 
         with st.spinner("Reading your documents and building your plan..."):
-            docs_context = build_supporting_docs_context(uploaded_files or [])
+            all_files = uploaded_files or []
+            doc_files = [f for f in all_files if not is_image_file(f.name)]
+            image_files = [f for f in all_files if is_image_file(f.name)]
+
+            docs_context = build_supporting_docs_context(doc_files)
+            docs_images = extract_images(image_files)
             st.session_state.docs_context = docs_context
-            st.session_state.doc_names = [f.name for f in (uploaded_files or [])]
+            st.session_state.docs_images = docs_images
+            st.session_state.doc_names = [f.name for f in all_files]
 
             try:
                 plan = current_provider_module().generate_plan(
@@ -344,6 +354,7 @@ def render_intake():
                     model=st.session_state.model,
                     intake_text=st.session_state.intake_text,
                     docs_context=docs_context,
+                    docs_images=docs_images,
                 )
             except Exception as exc:  # noqa: BLE001
                 st.error(f"Couldn't generate a plan: {exc}")
@@ -466,6 +477,7 @@ def render_work():
                             why_it_matters=step.get("why_it_matters", ""),
                             docs_context=st.session_state.docs_context,
                             chat_history=history,
+                            docs_images=st.session_state.docs_images,
                         )
                     except Exception as exc:  # noqa: BLE001
                         reply = f"Something went wrong calling the API: {exc}"

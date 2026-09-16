@@ -178,7 +178,8 @@ DEFAULTS = {
     "provider": PROVIDER_NAMES[0],
     "model": PROVIDERS[PROVIDER_NAMES[0]].MODELS[0],
     "api_keys": {
-        name: os.environ.get(mod.KEY_ENV_VAR, "") for name, mod in PROVIDERS.items()
+        name: (os.environ.get(mod.KEY_ENV_VAR, "") if getattr(mod, "KEY_ENV_VAR", None) else "")
+        for name, mod in PROVIDERS.items()
     },
 }
 
@@ -204,6 +205,14 @@ def current_api_key() -> str:
     return st.session_state.api_keys.get(st.session_state.provider, "")
 
 
+def provider_ready() -> bool:
+    """True if the current provider can actually be called - either it
+    doesn't need a key at all (e.g. Databricks-native), or a key is set."""
+    if getattr(current_provider_module(), "KEY_ENV_VAR", None) is None:
+        return True
+    return bool(current_api_key())
+
+
 # ---------------------------------------------------------------- Sidebar --
 with st.sidebar:
     st.header("Settings")
@@ -212,7 +221,7 @@ with st.sidebar:
         "AI Provider",
         options=PROVIDER_NAMES,
         index=PROVIDER_NAMES.index(st.session_state.provider),
-        help="Use whichever provider you have an API key for.",
+        help="Databricks needs nothing from you. Gemini needs a free API key if one isn't already configured.",
     )
     provider_module = current_provider_module()
 
@@ -220,12 +229,22 @@ with st.sidebar:
         st.session_state.model = provider_module.MODELS[0]
     st.session_state.model = st.selectbox("Model", options=provider_module.MODELS)
 
-    st.session_state.api_keys[st.session_state.provider] = st.text_input(
-        f"{st.session_state.provider} API key",
-        value=st.session_state.api_keys.get(st.session_state.provider, ""),
-        type="password",
-        help=f"{provider_module.KEY_HELP}. Used only for this session; never stored or logged.",
-    )
+    key_env_var = getattr(provider_module, "KEY_ENV_VAR", None)
+    if key_env_var is None:
+        st.session_state.api_keys[st.session_state.provider] = ""
+        st.success(f"✓ {st.session_state.provider} is ready — {provider_module.KEY_HELP}")
+    else:
+        env_key = os.environ.get(key_env_var, "")
+        if env_key:
+            st.session_state.api_keys[st.session_state.provider] = env_key
+            st.success(f"✓ {st.session_state.provider} is ready — no key needed.")
+        else:
+            st.session_state.api_keys[st.session_state.provider] = st.text_input(
+                f"{st.session_state.provider} API key",
+                value=st.session_state.api_keys.get(st.session_state.provider, ""),
+                type="password",
+                help=f"{provider_module.KEY_HELP}. Used only for this session; never stored or logged.",
+            )
 
     st.divider()
 
@@ -310,7 +329,7 @@ def render_intake():
         type="primary",
         disabled=not st.session_state.intake_text.strip(),
     ):
-        if not current_api_key():
+        if not provider_ready():
             st.error(f"Add your {st.session_state.provider} API key in the sidebar first.")
             return
 
@@ -424,7 +443,7 @@ def render_work():
             "Ask a question, share a draft, or say what you're stuck on..."
         )
         if user_msg:
-            if not current_api_key():
+            if not provider_ready():
                 st.error(f"Add your {st.session_state.provider} API key in the sidebar first.")
                 return
 

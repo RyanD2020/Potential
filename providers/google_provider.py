@@ -22,7 +22,11 @@ from .prompts import (
 )
 
 DISPLAY_NAME = "Google (Gemini)"
-MODELS = ["gemini-3.1-pro-preview", "gemini-3.8-flash", "gemini-3.5-flash-lite"]
+# Only free-tier models are listed - Gemini's Pro models require billing to
+# be enabled, so they're deliberately left out here. Google no longer
+# publishes exact free-tier rate limits; if these models change tier, check
+# aistudio.google.com or ai.google.dev/gemini-api/docs/rate-limits.
+MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
 KEY_ENV_VAR = "GOOGLE_API_KEY"
 KEY_HELP = "Get a key at aistudio.google.com"
 

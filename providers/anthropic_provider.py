@@ -59,7 +59,7 @@ def generate_plan(
 
     response = client.messages.create(
         model=model,
-        max_tokens=4000,
+        max_tokens=64000,
         system=PLAN_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": content}],
     )
@@ -110,7 +110,7 @@ def coach_step(
 
     response = client.messages.create(
         model=model,
-        max_tokens=1500,
+        max_tokens=16000,
         system=system_prompt,
         messages=messages,
     )

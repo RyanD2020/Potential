@@ -37,7 +37,7 @@ Return ONLY valid JSON (no markdown fences, no commentary) matching this exact s
 }
 
 Guidelines:
-- Break the project into 2-5 phases, each with 2-5 concrete steps. Fewer, clearer steps beat many vague ones.
+- Use as many phases and steps as the project genuinely needs - do not artificially limit detail or length for the sake of brevity. A thorough, complete plan is more valuable than a short one.
 - Steps should be actionable and specific to THIS project and any supporting documents provided — avoid generic advice.
 - Reference specifics from any supporting documents where relevant.
 - Assume the person will do the actual work; your steps should set them up to succeed on their own.

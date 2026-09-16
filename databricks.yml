@@ -1,0 +1,60 @@
+# Optional. You do NOT need this file for the simplest deploy path (pointing
+# a Databricks App directly at this GitHub repo from the UI - see README).
+#
+# This file is only needed if you want CLI- or GitHub-Actions-driven
+# deployments (`databricks bundle deploy`), e.g. via .github/workflows/deploy.yml.
+
+bundle:
+  name: project-coach
+
+resources:
+  apps:
+    project_coach:
+      name: "project-coach"
+      source_code_path: .
+      # Only keep the entries for providers you actually set up secrets for -
+      # a resource here with no matching secret will fail deployment.
+      resources:
+        - name: anthropic-api-key
+          secret:
+            scope: project-coach-secrets # create with: databricks secrets create-scope project-coach-secrets
+            key: ANTHROPIC_API_KEY
+            permission: READ
+        - name: openai-api-key
+          secret:
+            scope: project-coach-secrets
+            key: OPENAI_API_KEY
+            permission: READ
+        - name: google-api-key
+          secret:
+            scope: project-coach-secrets
+            key: GOOGLE_API_KEY
+            permission: READ
+
+targets:
+  dev:
+    mode: development
+    default: true
+    # `databricks bundle deploy` with no --target uses this: uploads the
+    # local working copy under your own workspace path. Good for testing
+    # before wiring up CI/CD.
+
+  prod:
+    mode: production
+    workspace:
+      # Replace with your workspace URL.
+      host: https://<your-workspace>.cloud.databricks.com
+      # Replace <owner> with the service principal application ID (for
+      # GitHub Actions CI/CD) or your own workspace username (for manual
+      # `databricks bundle deploy --target prod` runs).
+      root_path: /Workspace/Users/<owner>/.bundle/${bundle.name}/${bundle.target}
+    resources:
+      apps:
+        project_coach:
+          name: "project-coach"
+          # Pulls code straight from GitHub instead of uploading local files -
+          # keeps the deployed app in sync with what's pushed to `main`.
+          git_repository:
+            url: https://github.com/<your-org>/<your-repo>
+          git_source:
+            branch: main

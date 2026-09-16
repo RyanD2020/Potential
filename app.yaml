@@ -1,0 +1,15 @@
+command: ['streamlit', 'run', 'app.py']
+
+# Injects each provider's API key as an env var at runtime, without ever
+# putting a raw key in this file. Only add the "Add resource > Secret"
+# entries in the Databricks Apps UI for the provider(s) you actually want
+# to offer - if a resource below has no matching app resource, delete that
+# entry (an env var pointing at a resource that doesn't exist will fail
+# deployment).
+env:
+  - name: ANTHROPIC_API_KEY
+    valueFrom: anthropic-api-key
+  - name: OPENAI_API_KEY
+    valueFrom: openai-api-key
+  - name: GOOGLE_API_KEY
+    valueFrom: google-api-key

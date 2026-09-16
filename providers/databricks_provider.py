@@ -45,7 +45,7 @@ from .prompts import (
     extract_json,
 )
 
-DISPLAY_NAME = "Databricks (no key needed)"
+DISPLAY_NAME = "Databricks"
 KEY_ENV_VAR = None  # No API key concept for this provider.
 KEY_HELP = "Runs on this app's own Databricks identity - nothing to enter."
 SUPPORTS_VISION = False  # Uses serving_endpoints.query(), which is text-only.
@@ -60,12 +60,16 @@ MODEL_ENV_VARS = {
 }
 
 
+def _configured_model_labels() -> List[str]:
+    return [label for label, env_var in MODEL_ENV_VARS.items() if os.environ.get(env_var)]
+
+
 def _available_models() -> List[str]:
-    configured = [label for label, env_var in MODEL_ENV_VARS.items() if os.environ.get(env_var)]
-    return configured or ["No models configured yet - see providers/databricks_provider.py"]
+    return _configured_model_labels() or ["No models configured yet - see providers/databricks_provider.py"]
 
 
 MODELS = _available_models()
+HAS_CONFIGURED_MODELS = bool(_configured_model_labels())
 
 
 def _client() -> WorkspaceClient:
@@ -83,6 +87,23 @@ def _endpoint_for(model: str) -> str:
             "add it as a Serving endpoint resource on this app (see providers/databricks_provider.py)."
         )
     return endpoint_name
+
+
+def _response_text(content: Any) -> str:
+    """Some models behind Databricks Model Serving (notably Claude) return
+    message content as a list of content blocks rather than a plain string.
+    Normalize either shape to plain text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict):
+                parts.append(block.get("text", ""))
+            else:
+                parts.append(getattr(block, "text", "") or str(block))
+        return "".join(parts)
+    return str(content)
 
 
 def generate_plan(
@@ -110,7 +131,7 @@ def generate_plan(
         max_tokens=4000,
     )
 
-    return extract_json(response.choices[0].message.content)
+    return extract_json(_response_text(response.choices[0].message.content))
 
 
 def coach_step(
@@ -153,4 +174,4 @@ def coach_step(
         messages.append(ChatMessage(role=role, content=content))
 
     response = w.serving_endpoints.query(name=endpoint, messages=messages, max_tokens=1500)
-    return response.choices[0].message.content
+    return _response_text(response.choices[0].message.content)

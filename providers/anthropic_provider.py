@@ -22,6 +22,7 @@ DISPLAY_NAME = "Anthropic (Claude)"
 MODELS = ["claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5-20251001"]
 KEY_ENV_VAR = "ANTHROPIC_API_KEY"
 KEY_HELP = "Get a key at console.anthropic.com"
+SUPPORTS_VISION = True
 
 
 def _image_blocks(docs_images: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:

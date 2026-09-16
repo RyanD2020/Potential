@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets - never commit real keys
+.env
+*.pem
+
+# Exported session files contain the user's project text and chat history
+project_coach_session.json
+
+# OS / editor cruft
+.DS_Store
+.idea/
+.vscode/
+
+# Databricks CLI local state
+.databricks/

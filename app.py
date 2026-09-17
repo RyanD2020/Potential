@@ -18,6 +18,7 @@ import os
 import streamlit as st
 
 from document_utils import build_supporting_docs_context, extract_images, is_image_file
+from export_utils import build_plan_excel, build_plan_pdf
 from providers import PROVIDERS
 
 st.set_page_config(page_title="Project Coach", page_icon="🧭", layout="wide")
@@ -174,6 +175,7 @@ DEFAULTS = {
     "doc_names": [],
     "plan": None,
     "progress": {},
+    "celebrated": False,
     "chat_histories": {},
     "selected_step": None,
     "provider": PROVIDER_NAMES[0],
@@ -278,7 +280,33 @@ with st.sidebar:
             file_name="project_coach_session.json",
             mime="application/json",
             use_container_width=True,
+            help="Resume this exact session later in this app.",
         )
+
+        st.caption("Share with others:")
+        try:
+            pdf_bytes = build_plan_pdf(st.session_state.plan, st.session_state.progress)
+            st.download_button(
+                "📄 Export as PDF",
+                data=pdf_bytes,
+                file_name="project_plan.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Couldn't build the PDF export: {exc}")
+
+        try:
+            excel_bytes = build_plan_excel(st.session_state.plan, st.session_state.progress)
+            st.download_button(
+                "📊 Export as Excel",
+                data=excel_bytes,
+                file_name="project_plan.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Couldn't build the Excel export: {exc}")
 
     uploaded_session = st.file_uploader(
         "Load a saved session", type=["json"], key="session_loader"
@@ -419,6 +447,16 @@ def render_plan():
 # ------------------------------------------------------ Stage: Work through --
 def render_work():
     plan = st.session_state.plan
+    total_steps = sum(len(p["steps"]) for p in plan["phases"])
+    done_steps = sum(1 for v in st.session_state.progress.values() if v)
+    all_done = total_steps > 0 and done_steps == total_steps
+
+    if all_done and not st.session_state.celebrated:
+        st.balloons()
+        st.session_state.celebrated = True
+    elif not all_done:
+        st.session_state.celebrated = False
+
     nav_col, main_col = st.columns([1, 2.2])
 
     with nav_col:
@@ -438,6 +476,14 @@ def render_work():
             st.rerun()
 
     with main_col:
+        if all_done:
+            st.success(
+                f"🎉 All {total_steps} steps done — you've worked through the whole "
+                f"plan for **{plan.get('project_title', 'this project')}**. Nice work. "
+                "You can keep revisiting any step below, save your progress from the "
+                "sidebar, or start a new project whenever you're ready."
+            )
+
         if not st.session_state.selected_step:
             st.info("Pick a step on the left to get started.")
             return

@@ -17,6 +17,7 @@ import os
 
 import streamlit as st
 
+from chat_render import contains_code, render_message_content
 from document_utils import build_supporting_docs_context, extract_images, is_image_file
 from export_utils import build_plan_excel, build_plan_pdf
 from providers import PROVIDERS
@@ -444,6 +445,41 @@ def render_plan():
             st.rerun()
 
 
+def _send_coach_message(plan, phase, step, key, history, user_message) -> bool:
+    """Append a user message, call the coach, append its reply, and persist
+    the updated history. Returns True on success. Shared by the normal chat
+    box and the "paste error, get a fix" action so there's one code path
+    for talking to the coach, not two."""
+    if not provider_ready():
+        st.error(f"Add your {st.session_state.provider} API key in the sidebar first.")
+        return False
+
+    history.append({"role": "user", "content": user_message})
+
+    with st.spinner("Thinking..."):
+        try:
+            reply = current_provider_module().coach_step(
+                api_key=current_api_key(),
+                model=st.session_state.model,
+                project_title=plan.get("project_title", ""),
+                project_summary=plan.get("summary", ""),
+                phase_title=phase["title"],
+                phase_goal=phase["goal"],
+                step_title=step["title"],
+                step_description=step["description"],
+                why_it_matters=step.get("why_it_matters", ""),
+                docs_context=st.session_state.docs_context,
+                chat_history=history,
+                docs_images=st.session_state.docs_images,
+            )
+        except Exception as exc:  # noqa: BLE001
+            reply = f"Something went wrong calling the API: {exc}"
+
+    history.append({"role": "assistant", "content": reply})
+    st.session_state.chat_histories[key] = history
+    return True
+
+
 # ------------------------------------------------------ Stage: Work through --
 def render_work():
     plan = st.session_state.plan
@@ -513,45 +549,39 @@ def render_work():
         st.markdown(f"**Work through it with your coach** ({st.session_state.provider})")
 
         history = st.session_state.chat_histories.get(key, [])
-        for msg in history:
+        for msg_idx, msg in enumerate(history):
             with st.chat_message(msg["role"]):
-                st.write(msg["content"])
+                render_message_content(msg["content"], key_prefix=f"{key}-{msg_idx}")
+
+        # Guided "paste what happened, get a fix" loop - the safe, no-code-
+        # runs-server-side version of an iteration loop. Only shown right
+        # after a reply that actually contained code, so it's clear what
+        # it's offering to fix.
+        if history and history[-1]["role"] == "assistant" and contains_code(history[-1]["content"]):
+            with st.expander("⚠️ Ran this and hit an error or unexpected output?"):
+                pasted = st.text_area(
+                    "Paste what you saw - the full error/traceback helps most",
+                    key=f"{key}-fix-input",
+                )
+                if st.button("Get a fix", key=f"{key}-fix-button"):
+                    if pasted.strip():
+                        fix_message = (
+                            "I ran that code and got this output/error:\n\n"
+                            f"{pasted.strip()}\n\n"
+                            "Please diagnose what went wrong and give me a corrected, "
+                            "complete version of the code."
+                        )
+                        if _send_coach_message(plan, phase, step, key, history, fix_message):
+                            st.rerun()
+                    else:
+                        st.warning("Paste the error or output first.")
 
         user_msg = st.chat_input(
             "Ask a question, share a draft, or say what you're stuck on..."
         )
         if user_msg:
-            if not provider_ready():
-                st.error(f"Add your {st.session_state.provider} API key in the sidebar first.")
-                return
-
-            history.append({"role": "user", "content": user_msg})
-            with st.chat_message("user"):
-                st.write(user_msg)
-
-            with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    try:
-                        reply = current_provider_module().coach_step(
-                            api_key=current_api_key(),
-                            model=st.session_state.model,
-                            project_title=plan.get("project_title", ""),
-                            project_summary=plan.get("summary", ""),
-                            phase_title=phase["title"],
-                            phase_goal=phase["goal"],
-                            step_title=step["title"],
-                            step_description=step["description"],
-                            why_it_matters=step.get("why_it_matters", ""),
-                            docs_context=st.session_state.docs_context,
-                            chat_history=history,
-                            docs_images=st.session_state.docs_images,
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        reply = f"Something went wrong calling the API: {exc}"
-                st.write(reply)
-
-            history.append({"role": "assistant", "content": reply})
-            st.session_state.chat_histories[key] = history
+            if _send_coach_message(plan, phase, step, key, history, user_msg):
+                st.rerun()
 
 
 # --------------------------------------------------------------- Router --

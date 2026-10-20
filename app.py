@@ -17,6 +17,7 @@ import os
 
 import streamlit as st
 
+from agent_build import generate_brief, generate_clarifying_questions, run_agent_build
 from chat_render import contains_code, render_message_content
 from document_utils import build_supporting_docs_context, extract_images, is_image_file
 from export_utils import build_plan_excel, build_plan_pdf
@@ -176,6 +177,10 @@ DEFAULTS = {
     "doc_names": [],
     "plan": None,
     "progress": {},
+    "clarify_questions": [],
+    "brief": None,
+    "build_result": None,
+    "build_log": [],
     "celebrated": False,
     "chat_histories": {},
     "selected_step": None,
@@ -361,33 +366,50 @@ def render_intake():
         help="Documents get their text read. Images (like diagrams or screenshots) are shown directly to the model.",
     )
 
-    if st.button(
-        "Generate My Plan",
-        type="primary",
-        disabled=not st.session_state.intake_text.strip(),
-    ):
-        if not provider_ready():
-            st.error(f"Add your {st.session_state.provider} API key in the sidebar first.")
-            return
+    col1, col2 = st.columns(2)
 
-        with st.spinner("Reading your documents..."):
-            all_files = uploaded_files or []
-            doc_files = [f for f in all_files if not is_image_file(f.name)]
-            image_files = [f for f in all_files if is_image_file(f.name)]
+    with col1:
+        plan_clicked = st.button(
+            "Generate My Plan",
+            type="primary",
+            disabled=not st.session_state.intake_text.strip(),
+            use_container_width=True,
+            help="Coaches you through doing the work yourself, step by step.",
+        )
+    with col2:
+        build_clicked = st.button(
+            "🤖 Build It With Agents",
+            disabled=not st.session_state.intake_text.strip(),
+            use_container_width=True,
+            help="AI agents write and test working code for you, with your approval at each stage.",
+        )
 
-            docs_context = build_supporting_docs_context(doc_files)
-            docs_images = extract_images(image_files)
-            st.session_state.docs_context = docs_context
-            st.session_state.docs_images = docs_images
-            st.session_state.doc_names = [f.name for f in all_files]
+    if not (plan_clicked or build_clicked):
+        return
 
-        if docs_images and not getattr(current_provider_module(), "SUPPORTS_VISION", True):
-            st.warning(
-                f"{st.session_state.provider} can't actually see uploaded images through "
-                "this path yet - it'll know their filenames but not their content. "
-                "Switch to Google (Gemini) if the model needs to see what's in them."
-            )
+    if not provider_ready():
+        st.error(f"Add your {st.session_state.provider} API key in the sidebar first.")
+        return
 
+    with st.spinner("Reading your documents..."):
+        all_files = uploaded_files or []
+        doc_files = [f for f in all_files if not is_image_file(f.name)]
+        image_files = [f for f in all_files if is_image_file(f.name)]
+
+        docs_context = build_supporting_docs_context(doc_files)
+        docs_images = extract_images(image_files)
+        st.session_state.docs_context = docs_context
+        st.session_state.docs_images = docs_images
+        st.session_state.doc_names = [f.name for f in all_files]
+
+    if docs_images and not getattr(current_provider_module(), "SUPPORTS_VISION", True):
+        st.warning(
+            f"{st.session_state.provider} can't actually see uploaded images through "
+            "this path yet - it'll know their filenames but not their content. "
+            "Switch to Google (Gemini) if the model needs to see what's in them."
+        )
+
+    if plan_clicked:
         with st.spinner(f"Asking {st.session_state.provider} to build your plan..."):
             try:
                 plan = current_provider_module().generate_plan(
@@ -415,6 +437,190 @@ def render_intake():
             st.session_state.chat_histories = {}
             st.session_state.stage = "plan"
             st.rerun()
+
+    elif build_clicked:
+        with st.spinner(f"Asking {st.session_state.provider} what still needs clarifying..."):
+            try:
+                questions = generate_clarifying_questions(
+                    current_provider_module(),
+                    api_key=current_api_key(),
+                    model=st.session_state.model,
+                    intake_text=st.session_state.intake_text,
+                    docs_context=docs_context,
+                )
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Couldn't generate clarifying questions: {exc}")
+                return
+
+            for q in questions:
+                q["answer"] = q.get("suggested_answer", "")
+
+            st.session_state.clarify_questions = questions
+            st.session_state.stage = "clarify"
+            st.rerun()
+
+
+# --------------------------------------------------- Stage: Clarify (agent build) --
+def render_clarify():
+    render_header("A few things to clarify", "Suggested answers are pre-filled - edit anything, or leave as-is")
+
+    questions = st.session_state.clarify_questions
+    if not questions:
+        st.info("No clarifying questions were needed - you can go straight to the brief.")
+
+    areas = sorted({q.get("area", "General") for q in questions})
+    if areas:
+        st.caption("Areas covered: " + ", ".join(areas))
+
+    for i, q in enumerate(questions):
+        st.markdown(f"**{q.get('question', '')}**")
+        q["answer"] = st.text_area(
+            "Answer",
+            value=q.get("answer", q.get("suggested_answer", "")),
+            key=f"clarify-answer-{i}",
+            label_visibility="collapsed",
+            height=80,
+        )
+        st.divider()
+
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        if st.button("Back to intake"):
+            st.session_state.stage = "intake"
+            st.rerun()
+    with col2:
+        if st.button("Approve Answers & Generate Brief", type="primary", use_container_width=True):
+            with st.spinner(f"Asking {st.session_state.provider} to write the requirements brief..."):
+                try:
+                    brief = generate_brief(
+                        current_provider_module(),
+                        api_key=current_api_key(),
+                        model=st.session_state.model,
+                        intake_text=st.session_state.intake_text,
+                        docs_context=st.session_state.docs_context,
+                        answered_questions=questions,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Couldn't generate the brief: {exc}")
+                    return
+
+            st.session_state.brief = brief
+            st.session_state.stage = "brief"
+            st.rerun()
+
+
+# ----------------------------------------------------- Stage: Brief (agent build) --
+def render_brief():
+    brief = st.session_state.brief
+    render_header(brief.get("title", "Requirements Brief"), "Review before anything gets built")
+
+    st.write(brief.get("summary", ""))
+
+    if brief.get("requirements"):
+        st.markdown("**Requirements**")
+        for r in brief["requirements"]:
+            st.markdown(f"- {r}")
+
+    if brief.get("assumptions"):
+        st.markdown("**Assumptions**")
+        for a in brief["assumptions"]:
+            st.markdown(f"- {a}")
+
+    if brief.get("out_of_scope"):
+        st.markdown("**Explicitly out of scope**")
+        for o in brief["out_of_scope"]:
+            st.markdown(f"- {o}")
+
+    st.info(
+        "⚠️ Clicking Approve runs an automated build-and-test loop: a Developer agent writes "
+        "code, and a QA step actually executes it in an isolated environment (its own temp "
+        "directory, no access to this app's own credentials, a hard timeout). This is not a "
+        "full security sandbox - no network restrictions, no hard resource limits - and "
+        "'tested' means it ran without crashing, not that every behavior was verified "
+        "interactively."
+    )
+
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        if st.button("← Revise answers"):
+            st.session_state.stage = "clarify"
+            st.rerun()
+    with col2:
+        if st.button("🔨 Approve & Build", type="primary", use_container_width=True):
+            status_placeholder = st.empty()
+
+            def _progress(message: str):
+                st.session_state.build_log.append(message)
+                status_placeholder.info(message)
+
+            st.session_state.build_log = []
+            try:
+                result = run_agent_build(
+                    current_provider_module(),
+                    api_key=current_api_key(),
+                    model=st.session_state.model,
+                    brief=brief,
+                    progress_callback=_progress,
+                )
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"The build pipeline hit an unexpected error: {exc}")
+                return
+
+            st.session_state.build_result = result
+            st.session_state.stage = "build_result"
+            st.rerun()
+
+
+# ------------------------------------------------- Stage: Build result (agent build) --
+def render_build_result():
+    result = st.session_state.build_result
+    attempts = result.get("attempts", [])
+
+    if result.get("success"):
+        render_header("Build succeeded", f"Working code produced in {len(attempts)} attempt(s)")
+        st.success(f"✅ The code ran successfully on attempt {len(attempts)}.")
+    else:
+        render_header("Build did not pass", f"Stopped after {len(attempts)} attempt(s)")
+        st.error(
+            "The agent loop hit its attempt limit without producing code that ran cleanly. "
+            "The last attempt is shown below - you can download it and debug further yourself, "
+            "or go back and try again (sometimes a different model or a revised brief helps)."
+        )
+
+    st.markdown("**Final code:**")
+    st.code(result.get("final_code", ""), language="python")
+    st.download_button(
+        "⬇ Download this code",
+        data=result.get("final_code", ""),
+        file_name="agent_build_output.py",
+        mime="text/plain",
+    )
+
+    if attempts:
+        with st.expander(f"See all {len(attempts)} attempt(s)"):
+            for a in attempts:
+                r = a["result"]
+                status = "✅ Passed" if r["success"] else f"❌ Failed ({r['stage']})"
+                st.markdown(f"**Attempt {a['attempt']}: {status}**")
+                if not r["success"]:
+                    st.code(r.get("stderr") or r.get("stdout") or "(no output)", language="text")
+                st.code(a["code"], language="python")
+                st.divider()
+
+    st.markdown(
+        "**Next step:** this is a standalone script, not yet deployed anywhere. To actually "
+        "run it somewhere persistent (e.g. as a scheduled job or part of another app), download "
+        "it and follow the same manual deploy steps used for the rest of this project - nothing "
+        "here pushes to GitHub or Databricks automatically."
+    )
+
+    if st.button("Start a new build"):
+        st.session_state.clarify_questions = []
+        st.session_state.brief = None
+        st.session_state.build_result = None
+        st.session_state.build_log = []
+        st.session_state.stage = "intake"
+        st.rerun()
 
 
 # ------------------------------------------------------- Stage: Plan review --
@@ -548,6 +754,36 @@ def render_work():
         st.divider()
         st.markdown(f"**Work through it with your coach** ({st.session_state.provider})")
 
+        with st.expander("📎 Share a document or image with the coach"):
+            new_file = st.file_uploader(
+                "PDF, Word, Excel, CSV, PowerPoint, or an image",
+                type=["pdf", "docx", "txt", "md", "xlsx", "xlsm", "csv", "pptx", "png", "jpg", "jpeg", "gif", "webp"],
+                key=f"step-upload-{key}",
+            )
+            if new_file is not None and new_file.name not in st.session_state.doc_names:
+                if is_image_file(new_file.name):
+                    if not getattr(current_provider_module(), "SUPPORTS_VISION", True):
+                        st.warning(
+                            f"{st.session_state.provider} can't actually see images through "
+                            "this path - it'll know the filename but not the content."
+                        )
+                    st.session_state.docs_images = st.session_state.docs_images + extract_images(
+                        [new_file]
+                    )
+                else:
+                    new_text = build_supporting_docs_context([new_file])
+                    st.session_state.docs_context = (
+                        f"{st.session_state.docs_context}\n\n{new_text}"
+                        if st.session_state.docs_context
+                        else new_text
+                    )
+                st.session_state.doc_names = st.session_state.doc_names + [new_file.name]
+
+                history = st.session_state.chat_histories.get(key, [])
+                note = f"I've shared an additional document: {new_file.name}"
+                if _send_coach_message(plan, phase, step, key, history, note):
+                    st.rerun()
+
         history = st.session_state.chat_histories.get(key, [])
         for msg_idx, msg in enumerate(history):
             with st.chat_message(msg["role"]):
@@ -585,9 +821,12 @@ def render_work():
 
 
 # --------------------------------------------------------------- Router --
-if st.session_state.stage == "intake" or st.session_state.plan is None:
-    render_intake()
-elif st.session_state.stage == "plan":
-    render_plan()
-else:
-    render_work()
+_STAGE_RENDERERS = {
+    "intake": render_intake,
+    "clarify": render_clarify,
+    "brief": render_brief,
+    "build_result": render_build_result,
+    "plan": render_plan,
+    "work": render_work,
+}
+_STAGE_RENDERERS.get(st.session_state.stage, render_intake)()
